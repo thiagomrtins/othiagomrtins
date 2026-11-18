@@ -28,9 +28,21 @@ Sem `APIFY_TOKEN` o app abre em modo demonstração (dados fictícios, custo zer
 |---|---|
 | Busca em português (vídeos + frases) | US$ 0,16 |
 | Ver comentários de um vídeo | US$ 0,017 |
+| Seção do YouTube (10 vídeos), pelo Apify | US$ 0,04 |
+| Seção do YouTube, pela API do Google | US$ 0 (cota grátis diária) |
 | Resultado já em cache | US$ 0 |
 
 O plano gratuito do Apify tem US$ 5 por mês. Por isso o cache e os tetos abaixo importam.
+
+## Seção do YouTube
+
+No fim da página aparecem os 10 vídeos mais vistos do YouTube sobre o assunto buscado, em cards com
+capa e título. O clique abre o vídeo no YouTube.
+
+- A busca só dispara quando a seção chega perto da tela, então quem não rola até o fim não gera custo.
+- Com `YOUTUBE_API_KEY`, usa a API oficial (país BR, idioma pt, ordenado por visualizações).
+- Sem a chave, ou se a cota do Google acabar, usa o Actor `streamers/youtube-scraper` do Apify.
+- Links e capas são montados a partir do id do vídeo; nada do que a API devolve vira link direto.
 
 ## Segurança (resumo do que está implementado)
 

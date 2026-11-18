@@ -1,11 +1,13 @@
 import "server-only";
 import { isTikTokVideoUrl, safeHttpsUrl } from "./sanitize";
+import { parseApifyYoutube, YOUTUBE_LIMIT } from "./youtube";
 import { rankSuggestions, suggestionSeeds, type RawSuggestion } from "./searches";
 import { buildTrending, GENERIC_TAGS, toHashtag } from "./trends";
-import type { Language, SearchPhrase, TopComment, Trending, VideoCard } from "./types";
+import type { Language, SearchPhrase, TopComment, Trending, VideoCard, YoutubeVideo } from "./types";
 
 const ACTOR = "clockworks~tiktok-scraper";
 const SUGGEST_ACTOR = "memo23~tiktok-suggestions-scraper";
+const YOUTUBE_ACTOR = "streamers~youtube-scraper";
 const API = "https://api.apify.com/v2";
 
 // Abaixo disto, a busca faz uma segunda rodada automática para tentar completar.
@@ -302,4 +304,30 @@ export async function fetchTopComments(videoUrl: string, token: string): Promise
     .sort((a, b) => (b.diggCount ?? 0) - (a.diggCount ?? 0))
     .slice(0, COMMENTS_TO_SHOW)
     .map((c) => ({ text: c.text as string, likes: c.diggCount ?? 0, author: c.uniqueId ?? "" }));
+}
+
+// Reserva quando não há YOUTUBE_API_KEY (ou a cota do Google acabou). Custa ~US$ 0,004 por vídeo
+// e NÃO tem filtro de idioma: em testes, metade dos vídeos veio em inglês.
+// O Actor é instável: às vezes termina "com sucesso" devolvendo só um registro vazio (o endereço da
+// busca, sem vídeos). Quando isso acontece, tentamos mais uma vez (custo extra de ~US$ 0,004).
+export async function fetchYoutubeViaApify(query: string, token: string): Promise<YoutubeVideo[]> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const items = await runActorRaw<unknown>(
+      token,
+      YOUTUBE_ACTOR,
+      {
+        searchQueries: [query],
+        maxResults: YOUTUBE_LIMIT,
+        maxResultsShorts: 0,
+        maxResultStreams: 0,
+        sortingOrder: "views",
+        transcriptionAndSubtitle: "NONE",
+      },
+      RUN_LIMITS,
+    );
+    const videos = parseApifyYoutube(items);
+    if (videos.length > 0) return videos;
+    console.error("[apify] YouTube sem vídeos na tentativa", attempt + 1);
+  }
+  return [];
 }

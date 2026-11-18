@@ -6,6 +6,7 @@ import type { ExpandResult, Language, SearchResult } from "@/lib/types";
 
 // Os resultados só aparecem depois da primeira busca: carregamos esse código só então.
 const VideoCardView = dynamic(() => import("@/components/VideoCardView").then((m) => m.VideoCardView));
+const YoutubeSection = dynamic(() => import("@/components/YoutubeSection").then((m) => m.YoutubeSection));
 const TrendingBlock = dynamic(() => import("@/components/TrendingBlock").then((m) => m.TrendingBlock));
 
 export default function Home() {
@@ -142,6 +143,10 @@ export default function Home() {
       </section>
 
       {result && result.videos.length > 0 && <TrendingBlock trending={result.trending} onPick={pickPhrase} />}
+
+      {result && result.videos.length > 0 && (
+        <YoutubeSection key={`${result.fetchedAt}:${result.query}`} query={result.query} language={result.language} />
+      )}
     </main>
   );
 }

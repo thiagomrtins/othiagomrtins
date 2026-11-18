@@ -51,3 +51,20 @@ export interface ExpandResult {
   queries: string[];
   source: "ai" | "rules";
 }
+
+export interface YoutubeVideo {
+  id: string;
+  title: string;
+  channel: string;
+  views: number | null;
+  url: string;
+  thumb: string;
+}
+
+export interface YoutubeResult {
+  query: string;
+  language: Language;
+  // "official" = API do Google (com país e idioma); "apify" = Actor de reserva (idioma não garantido).
+  source: "official" | "apify" | "demo";
+  videos: YoutubeVideo[];
+}
