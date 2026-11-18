@@ -9,6 +9,8 @@ import type { Language, SearchPhrase, TopComment, Trending, VideoCard, YoutubeVi
 
 const ACTOR = "clockworks~tiktok-scraper";
 const SUGGEST_ACTOR = "memo23~tiktok-suggestions-scraper";
+// YouTube: o rápido leva ~5 s e custa ~US$ 0,01 (10 vídeos); o de reserva leva 18 a 50 s e custa ~US$ 0,04.
+const YOUTUBE_FAST_ACTOR = "grow_media~youtube-search-api";
 const YOUTUBE_ACTOR = "streamers~youtube-scraper";
 // Comentários: o rápido leva ~3 s e custa US$ 0,0003 por comentário; o padrão leva ~28 s e US$ 0,00125.
 const COMMENTS_FAST_ACTOR = "apidojo~tiktok-comments-scraper";
@@ -151,6 +153,7 @@ const VIDEO_RUN_LIMITS: RunLimits = { maxCostUsd: MAX_COST_USD, maxWaitMs: 100_0
 const PHRASES_RUN_LIMITS: RunLimits = { maxCostUsd: MAX_COST_USD, maxWaitMs: 40_000 };
 const COMMENTS_FAST_LIMITS: RunLimits = { maxCostUsd: MAX_COST_USD, maxWaitMs: 30_000 };
 const COMMENTS_STD_LIMITS: RunLimits = { maxCostUsd: MAX_COST_USD, maxWaitMs: 90_000 };
+const YOUTUBE_FAST_LIMITS: RunLimits = { maxCostUsd: MAX_COST_USD, maxWaitMs: 30_000 };
 const YOUTUBE_RUN_LIMITS: RunLimits = { maxCostUsd: MAX_COST_USD, maxWaitMs: 90_000 };
 
 const runActor = (
@@ -320,11 +323,37 @@ export async function fetchTopComments(videoUrl: string, token: string): Promise
   return topComments(rows, "standard");
 }
 
-// Reserva quando não há YOUTUBE_API_KEY (ou a cota do Google acabou). Custa ~US$ 0,004 por vídeo
-// e NÃO tem filtro de idioma: em testes, metade dos vídeos veio em inglês.
-// O Actor é instável: às vezes termina "com sucesso" devolvendo só um registro vazio (o endereço da
-// busca, sem vídeos). Quando isso acontece, tentamos mais uma vez (custo extra de ~US$ 0,004).
-export async function fetchYoutubeViaApify(query: string, token: string): Promise<YoutubeVideo[]> {
+// Quando não há YOUTUBE_API_KEY (ou a cota do Google acabou). Tenta primeiro o Actor rápido
+// (~5 s, ~US$ 0,01, usa a API do YouTube por trás e aceita país e idioma como dica). Se falhar ou
+// vier vazio, usa o Actor de reserva (18 a 50 s, ~US$ 0,04, sem filtro de idioma).
+// O de reserva é instável: às vezes termina "com sucesso" devolvendo só um registro vazio (o
+// endereço da busca, sem vídeos). Nesse caso tentamos mais uma vez (extra de ~US$ 0,004).
+export async function fetchYoutubeViaApify(
+  query: string,
+  token: string,
+  language: Language = "pt",
+): Promise<YoutubeVideo[]> {
+  try {
+    const rows = await runActorRaw<unknown>(
+      token,
+      YOUTUBE_FAST_ACTOR,
+      {
+        q: query,
+        maxResults: YOUTUBE_LIMIT,
+        useFilters: true,
+        order: "viewCount",
+        safeSearch: "moderate",
+        ...(language === "pt" ? { regionCode: "BR", relevanceLanguage: "pt" } : {}),
+      },
+      YOUTUBE_FAST_LIMITS,
+    );
+    const fast = parseApifyYoutube(rows);
+    if (fast.length > 0) return fast;
+    console.error("[apify] YouTube (rápido) sem vídeos");
+  } catch (err) {
+    console.error("[apify] YouTube (rápido):", err instanceof Error ? err.message : "erro");
+  }
+
   for (let attempt = 0; attempt < 2; attempt++) {
     const items = await runActorRaw<unknown>(
       token,
@@ -341,7 +370,7 @@ export async function fetchYoutubeViaApify(query: string, token: string): Promis
     );
     const videos = parseApifyYoutube(items);
     if (videos.length > 0) return videos;
-    console.error("[apify] YouTube sem vídeos na tentativa", attempt + 1);
+    console.error("[apify] YouTube (reserva) sem vídeos na tentativa", attempt + 1);
   }
   return [];
 }

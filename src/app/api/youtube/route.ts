@@ -8,7 +8,7 @@ import { cleanText } from "@/lib/sanitize";
 import type { Language, YoutubeResult, YoutubeVideo } from "@/lib/types";
 import { fetchOfficialYoutube } from "@/lib/youtube";
 
-// Pelo Apify pode haver até 2 tentativas de ~1 min cada.
+// Pelo Apify: ~5 s no Actor rápido; no pior caso, a reserva faz até 2 tentativas.
 export const maxDuration = 300;
 
 const TTL_SEC = 24 * 3600;
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
   if ((!youtubeKey || failed) && apifyToken) {
     try {
       source = "apify";
-      videos = await fetchYoutubeViaApify(query, apifyToken);
+      videos = await fetchYoutubeViaApify(query, apifyToken, language);
       failed = false;
     } catch (err) {
       logError("youtube:apify", err);

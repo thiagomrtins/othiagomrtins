@@ -77,7 +77,7 @@ export function YoutubeSection({ query, language }: { query: string; language: L
       </h2>
       <p className="hint">
         Os 10 vídeos mais vistos sobre “{query}”. Clique para abrir no YouTube.
-        {data?.source === "apify" && language === "pt" && " Pode incluir vídeos em outros idiomas."}
+        {data && data.source !== "demo" && language === "pt" && " O YouTube prioriza o português do Brasil, mas pode incluir vídeos em outros idiomas."}
       </p>
 
       {loading && (

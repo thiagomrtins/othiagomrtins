@@ -40,7 +40,7 @@ Sem `APIFY_TOKEN` o app abre em modo demonstração (dados fictícios, custo zer
 |---|---|
 | Busca em português (vídeos + frases) | US$ 0,16 (3 execuções de vídeos, de US$ 0,001 cada de início) |
 | Ver comentários de um vídeo | US$ 0,003 (3 a 6 s; reserva mais lenta: US$ 0,0125) |
-| Seção do YouTube (10 vídeos), pelo Apify | US$ 0,04 |
+| Seção do YouTube (10 vídeos), pelo Apify | US$ 0,01 (~5 s) |
 | Seção do YouTube, pela API do Google | US$ 0 (cota grátis diária) |
 | Resultado já em cache | US$ 0 |
 
@@ -52,8 +52,10 @@ No fim da página aparecem os 10 vídeos mais vistos do YouTube sobre o assunto 
 capa e título. O clique abre o vídeo no YouTube.
 
 - A busca só dispara quando a seção chega perto da tela, então quem não rola até o fim não gera custo.
-- Com `YOUTUBE_API_KEY`, usa a API oficial (país BR, idioma pt, ordenado por visualizações).
-- Sem a chave, ou se a cota do Google acabar, usa o Actor `streamers/youtube-scraper` do Apify.
+- Com `YOUTUBE_API_KEY`, usa a API oficial do Google (~1 s, cota grátis).
+- Sem a chave, usa o Actor `grow_media/youtube-search-api` do Apify (~5 s, ~US$ 0,01), e como último
+  recurso o `streamers/youtube-scraper` (18 a 50 s, ~US$ 0,04).
+- País BR e idioma pt são dicas para o YouTube, e não filtros: podem vir vídeos em outros idiomas.
 - Links e capas são montados a partir do id do vídeo; nada do que a API devolve vira link direto.
 
 ## Segurança (resumo do que está implementado)
