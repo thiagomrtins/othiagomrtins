@@ -55,8 +55,11 @@ export async function GET(req: NextRequest) {
       cached: false,
       fetchedAt: new Date().toISOString(),
     };
-    const ttlHours = Number(process.env.CACHE_TTL_HOURS ?? 6);
-    cacheSet(key, result, ttlHours * 3_600_000);
+    // Busca vazia não vai para o cache: senão o erro fica preso por horas.
+    if (videos.length > 0) {
+      const ttlHours = Number(process.env.CACHE_TTL_HOURS ?? 6);
+      cacheSet(key, result, ttlHours * 3_600_000);
+    }
     return NextResponse.json(result);
   } catch {
     return NextResponse.json(
