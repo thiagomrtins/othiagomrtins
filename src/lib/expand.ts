@@ -10,9 +10,8 @@ const DAY_MS = 24 * 3_600_000;
 // Sem chave (ou se a IA falhar) usamos regras simples. Pior que a IA, mas nunca deixa a busca parada.
 export function rulesExpand(query: string): string[] {
   const q = query.trim();
-  // Hashtag do próprio assunto: quase só brasileiros usam hashtags em português.
-  const tag = q.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  return [`#${tag}`, `#${tag}brasil`, `dicas de ${q}`].slice(0, MAX_BRANCHES);
+  // Busca por frase com IP do Brasil traz conteúdo em português (testado: 11 de 12).
+  return [q, `dicas de ${q}`, `${q} explica`].slice(0, MAX_BRANCHES);
 }
 
 function clean(list: unknown, original: string): string[] {

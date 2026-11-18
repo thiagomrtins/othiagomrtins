@@ -5,8 +5,10 @@ const API = "https://api.apify.com/v2";
 
 export const VIDEOS_TO_SHOW = 8;
 export const COMMENTS_TO_SHOW = 5;
-// Vídeos pedidos por hashtag ou frase. Só parte vem em português, então pedimos a mais.
+// Vídeos pedidos por frase ou hashtag. Com o IP do Brasil, ~90% vêm em português.
 const PER_BRANCH = 8;
+// O TikTok decide o idioma pelo IP de quem busca, não por parâmetro. Este país vai no proxy.
+const PT_PROXY = "BR";
 // Hashtags novas tiradas dos vídeos em português, se a primeira rodada não bastar.
 const SNOWBALL_TAGS = 3;
 // Comentários buscados por vídeo, só quando a pessoa abre. Cada um custa ~US$ 0,00125.
@@ -162,20 +164,15 @@ export async function searchViralVideos(
   );
   const phrases = branches.filter((b) => !b.startsWith("#"));
 
+  const ptInput = { ...BASE_INPUT, proxyCountryCode: PT_PROXY, resultsPerPage: PER_BRANCH };
   const jobs: Promise<RawVideo[]>[] = [];
-  if (tags.length > 0) {
-    jobs.push(runActor(token, { ...BASE_INPUT, hashtags: tags, resultsPerPage: PER_BRANCH }));
-  }
   if (phrases.length > 0) {
-    jobs.push(
-      runActor(token, {
-        ...BASE_INPUT,
-        searchQueries: phrases,
-        searchSection: "/video",
-        videoSearchSorting: "MOST_LIKED",
-        resultsPerPage: PER_BRANCH,
-      }),
-    );
+    // Sem videoSearchSorting: a ordenação "mais curtidos" do TikTok foge da localização
+    // (testado: 0 de 12 em português). Ordenamos por curtidas depois, aqui dentro.
+    jobs.push(runActor(token, { ...ptInput, searchQueries: phrases, searchSection: "/video" }));
+  }
+  if (tags.length > 0) {
+    jobs.push(runActor(token, { ...ptInput, hashtags: tags }));
   }
 
   let items = (await Promise.all(jobs)).flat();
@@ -185,7 +182,7 @@ export async function searchViralVideos(
   if (picked.length < VIDEOS_TO_SHOW) {
     const next = topNewHashtags(picked, new Set(tags));
     if (next.length > 0) {
-      const more = await runActor(token, { ...BASE_INPUT, hashtags: next, resultsPerPage: PER_BRANCH });
+      const more = await runActor(token, { ...ptInput, hashtags: next });
       items = [...items, ...more];
       picked = pick(items, true);
     }
