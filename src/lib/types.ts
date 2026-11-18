@@ -23,7 +23,13 @@ export interface TrendTopic {
   likes: number;
 }
 
+export interface SearchPhrase {
+  phrase: string;
+  seed: string;
+}
+
 export interface Trending {
+  searches: SearchPhrase[];
   hashtags: TrendTopic[];
   terms: TrendTopic[];
   analyzed: number;

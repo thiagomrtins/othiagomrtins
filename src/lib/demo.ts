@@ -28,6 +28,10 @@ export function demoComments(): TopComment[] {
 export function demoTrending(): Trending {
   const t = (label: string, videos: number, likes: number) => ({ label, videos, likes });
   return {
+    searches: [
+      { phrase: "como fazer exemplo em casa", seed: "como fazer exemplo" },
+      { phrase: "como funciona exemplo para iniciantes", seed: "como funciona exemplo" },
+    ],
     hashtags: [t("#exemplo1", 5, 900_000), t("#exemplo2", 4, 400_000), t("#exemplo3", 3, 120_000)],
     terms: [t("exemplo", 4, 500_000), t("demonstração", 3, 200_000)],
     analyzed: 8,

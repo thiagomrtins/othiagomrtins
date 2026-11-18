@@ -1,7 +1,9 @@
+import { rankSuggestions, suggestionSeeds, type RawSuggestion } from "./searches";
 import { buildTrending, GENERIC_TAGS, toHashtag } from "./trends";
-import type { Language, TopComment, Trending, VideoCard } from "./types";
+import type { Language, SearchPhrase, TopComment, Trending, VideoCard } from "./types";
 
 const ACTOR = "clockworks~tiktok-scraper";
+const SUGGEST_ACTOR = "memo23~tiktok-suggestions-scraper";
 const API = "https://api.apify.com/v2";
 
 export const VIDEOS_TO_SHOW = 8;
@@ -48,10 +50,10 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Inicia a execução, espera até MAX_WAIT_MS e, se estourar, aborta (para parar de cobrar).
-async function runActor(token: string, input: unknown): Promise<RawVideo[]> {
+async function runActorRaw<T>(token: string, actor: string, input: unknown): Promise<T[]> {
   const auth = { Authorization: `Bearer ${token}` };
   const started = await fetchJson<{ data: { id: string; defaultDatasetId: string } }>(
-    `${API}/acts/${ACTOR}/runs`,
+    `${API}/acts/${actor}/runs`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json", ...auth },
@@ -76,10 +78,28 @@ async function runActor(token: string, input: unknown): Promise<RawVideo[]> {
   }
   if (status !== "SUCCEEDED") throw new Error(`Execução terminou como ${status}`);
 
-  return fetchJson<RawVideo[]>(
+  return fetchJson<T[]>(
     `${API}/datasets/${defaultDatasetId}/items?format=json&clean=true&limit=200`,
     { headers: auth },
   );
+}
+
+const runActor = (token: string, input: unknown) => runActorRaw<RawVideo>(token, ACTOR, input);
+
+// Frases que o TikTok sugere quando alguém digita na busca (autocomplete), no Brasil.
+// O TikTok decide pelo IP, então usamos o grupo de proxy RESIDENCIAL com país BR
+// (o grupo padrão da conta gratuita só tem IPs dos EUA e dá erro).
+export async function fetchSearchPhrases(subject: string, token: string): Promise<SearchPhrase[]> {
+  const seeds = suggestionSeeds(subject);
+  const rows = await runActorRaw<RawSuggestion>(token, SUGGEST_ACTOR, {
+    keywords: seeds,
+    regions: ["BR"],
+    languages: ["pt"],
+    maxSuggestionsPerKeyword: 6,
+    includeMetadata: true,
+    proxy: { useApifyProxy: true, apifyProxyGroups: ["RESIDENTIAL"], apifyProxyCountry: "BR" },
+  });
+  return rankSuggestions(rows, subject, seeds);
 }
 
 const BASE_INPUT = {

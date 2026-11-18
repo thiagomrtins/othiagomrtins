@@ -93,5 +93,5 @@ export function buildTrending(videos: TrendVideo[], query: string): Trending {
 
   // Só mostramos temas que aparecem em pelo menos 2 vídeos; um termo isolado é ruído.
   const repeatedTerms = new Map([...terms].filter(([, v]) => v.videos >= 2));
-  return { hashtags: rank(tags, 10), terms: rank(repeatedTerms, 8), analyzed: videos.length };
+  return { searches: [], hashtags: rank(tags, 10), terms: rank(repeatedTerms, 8), analyzed: videos.length };
 }

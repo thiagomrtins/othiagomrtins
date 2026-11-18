@@ -36,15 +36,14 @@ export default function Home() {
   }
 
   // Em português, primeiro mostramos as ramificações para a pessoa escolher.
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function start(q: string) {
     setResult(null);
     setBranches(null);
-    if (language === "global") return runSearch(query, language, []);
+    if (language === "global") return runSearch(q, language, []);
     setLoading(true);
     setError(null);
     try {
-      const data = await getJson<ExpandResult>(`/api/expand?q=${encodeURIComponent(query)}`);
+      const data = await getJson<ExpandResult>(`/api/expand?q=${encodeURIComponent(q)}`);
       setBranches(data);
       setSelected(data.queries);
     } catch (err) {
@@ -52,6 +51,18 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    void start(query);
+  }
+
+  // Clicar numa frase do ranking pesquisa aquele assunto.
+  function pickPhrase(phrase: string) {
+    setQuery(phrase);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    void start(phrase);
   }
 
   function toggle(q: string) {
@@ -113,7 +124,7 @@ export default function Home() {
         {result?.videos.map((v, i) => <VideoCardView key={v.id} video={v} rank={i + 1} />)}
       </section>
 
-      {result && result.videos.length > 0 && <TrendingBlock trending={result.trending} />}
+      {result && result.videos.length > 0 && <TrendingBlock trending={result.trending} onPick={pickPhrase} />}
     </main>
   );
 }

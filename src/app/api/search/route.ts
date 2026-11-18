@@ -1,12 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { searchViralVideos } from "@/lib/apify";
+import { fetchSearchPhrases, searchViralVideos } from "@/lib/apify";
 import { MAX_BRANCHES } from "@/lib/expand";
 import { cacheGet, cacheSet } from "@/lib/cache";
 import { demoTrending, demoVideos } from "@/lib/demo";
 import { allowRequest } from "@/lib/rateLimit";
-import type { Language, SearchResult } from "@/lib/types";
+import type { Language, SearchPhrase, SearchResult } from "@/lib/types";
 
 export const maxDuration = 300;
+
+// Frases do TikTok ficam 24 h em cache e valem para todos os usuários do mesmo assunto.
+// Se falhar, a busca segue sem esse bloco: ele nunca pode derrubar os vídeos.
+async function phrasesFor(subject: string, token: string): Promise<SearchPhrase[]> {
+  const key = `phrases:${subject.toLowerCase()}`;
+  const hit = cacheGet<SearchPhrase[]>(key);
+  if (hit) return hit;
+  try {
+    const phrases = await fetchSearchPhrases(subject, token);
+    if (phrases.length > 0) cacheSet(key, phrases, 24 * 3_600_000);
+    return phrases;
+  } catch {
+    return [];
+  }
+}
 
 export async function GET(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
@@ -61,7 +76,13 @@ export async function GET(req: NextRequest) {
   if (hit) return NextResponse.json({ ...hit, cached: true });
 
   try {
-    const { videos, trending } = await searchViralVideos(queries, language, token);
+    // Só em português: as frases vêm do TikTok do Brasil.
+    const [found, searches] = await Promise.all([
+      searchViralVideos(queries, language, token),
+      language === "pt" ? phrasesFor(query, token) : Promise.resolve([] as SearchPhrase[]),
+    ]);
+    const { videos } = found;
+    const trending = { ...found.trending, searches };
     const result: SearchResult = {
       query,
       language,

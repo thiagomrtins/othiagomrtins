@@ -47,3 +47,8 @@ li small { color:var(--muted); margin-left:6px; }
 .rank-list .bar i { display:block; height:100%; background:var(--accent); border-radius:99px; }
 .chip small { color:var(--muted); margin-left:4px; }
 @media (max-width:480px) { .rank-list li { grid-template-columns:28px minmax(0,1fr); } .rank-list .count { grid-column:2; text-align:left; } .rank-list .bar { grid-column:2; } }
+.sub-block { display:grid; gap:8px; }
+.rank-list li.phrase { grid-template-columns:28px minmax(0,1fr); }
+.rank-list li.phrase .pos { grid-row:auto; }
+.phrase-btn { background:none; border:0; padding:0; color:var(--fg); font:inherit; font-weight:600; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
+.phrase-btn:hover { color:var(--accent); text-decoration:underline; }
