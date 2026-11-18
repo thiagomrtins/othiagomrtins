@@ -1,6 +1,15 @@
+# dependências e build
 node_modules
 .next
-.env
-.env.local
-next-env.d.ts
+out
+coverage
 *.tsbuildinfo
+next-env.d.ts
+
+# segredos: nunca vão para o GitHub
+.env
+.env.*
+!.env.example
+
+# Vercel
+.vercel

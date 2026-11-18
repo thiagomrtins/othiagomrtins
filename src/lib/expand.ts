@@ -1,4 +1,6 @@
+import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { takeBudget } from "./budget";
 import { cacheGet, cacheSet } from "./cache";
 import type { ExpandResult } from "./types";
 
@@ -66,12 +68,13 @@ async function aiExpand(query: string, apiKey: string): Promise<string[]> {
 
 export async function expandQuery(query: string): Promise<ExpandResult> {
   const key = `expand:${query.toLowerCase()}`;
-  const hit = cacheGet<ExpandResult>(key);
+  const hit = await cacheGet<ExpandResult>(key);
   if (hit) return hit;
 
   let result: ExpandResult = { query, queries: rulesExpand(query), source: "rules" };
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (apiKey) {
+  // A IA só roda se houver chave E ainda houver orçamento diário para ela.
+  if (apiKey && (await takeBudget("expand"))) {
     try {
       const queries = await aiExpand(query, apiKey);
       if (queries.length > 1) result = { query, queries, source: "ai" };
@@ -79,6 +82,6 @@ export async function expandQuery(query: string): Promise<ExpandResult> {
       // Mantém as regras: a busca não pode depender da IA.
     }
   }
-  cacheSet(key, result, DAY_MS);
+  await cacheSet(key, result, DAY_MS);
   return result;
 }

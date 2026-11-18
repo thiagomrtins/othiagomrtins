@@ -1,9 +1,12 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { TrendingBlock } from "@/components/TrendingBlock";
-import { VideoCardView } from "@/components/VideoCardView";
+import dynamic from "next/dynamic";
+import { FormEvent, useRef, useState } from "react";
 import type { ExpandResult, Language, SearchResult } from "@/lib/types";
+
+// Os resultados só aparecem depois da primeira busca: carregamos esse código só então.
+const VideoCardView = dynamic(() => import("@/components/VideoCardView").then((m) => m.VideoCardView));
+const TrendingBlock = dynamic(() => import("@/components/TrendingBlock").then((m) => m.TrendingBlock));
 
 export default function Home() {
   const [query, setQuery] = useState("");
@@ -13,6 +16,8 @@ export default function Home() {
   const [branches, setBranches] = useState<ExpandResult | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [result, setResult] = useState<SearchResult | null>(null);
+  // Cada busca ganha um número; respostas de buscas antigas são ignoradas.
+  const requestId = useRef(0);
 
   async function getJson<T>(url: string): Promise<T> {
     const res = await fetch(url);
@@ -22,16 +27,19 @@ export default function Home() {
   }
 
   async function runSearch(q: string, lang: Language, variants: string[]) {
+    const id = ++requestId.current;
     setLoading(true);
     setError(null);
     try {
       const v = variants.length > 0 ? `&v=${encodeURIComponent(variants.join("|"))}` : "";
-      setResult(await getJson<SearchResult>(`/api/search?q=${encodeURIComponent(q)}&lang=${lang}${v}`));
+      const data = await getJson<SearchResult>(`/api/search?q=${encodeURIComponent(q)}&lang=${lang}${v}`);
+      if (id === requestId.current) setResult(data);
     } catch (err) {
+      if (id !== requestId.current) return;
       setResult(null);
       setError(err instanceof Error ? err.message : "Erro na busca");
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }
 
@@ -40,16 +48,18 @@ export default function Home() {
     setResult(null);
     setBranches(null);
     if (language === "global") return runSearch(q, language, []);
+    const id = ++requestId.current;
     setLoading(true);
     setError(null);
     try {
       const data = await getJson<ExpandResult>(`/api/expand?q=${encodeURIComponent(q)}`);
+      if (id !== requestId.current) return;
       setBranches(data);
       setSelected(data.queries);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro na busca");
+      if (id === requestId.current) setError(err instanceof Error ? err.message : "Erro na busca");
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }
 

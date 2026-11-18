@@ -1,15 +1,20 @@
-import { NextRequest, NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { expandQuery } from "@/lib/expand";
+import { clientIp, crossSite, fail, json, logError } from "@/lib/http";
 import { allowRequest } from "@/lib/rateLimit";
+import { cleanText } from "@/lib/sanitize";
 
 export async function GET(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
-  if (!allowRequest(ip, 20)) {
-    return NextResponse.json({ error: "Muitas buscas seguidas. Espere um minuto." }, { status: 429 });
+  if (crossSite(req)) return fail("Pedido não permitido.", 403);
+  if (!(await allowRequest(clientIp(req), "expand", 20))) {
+    return fail("Muitas buscas seguidas. Espere um minuto.", 429);
   }
-  const query = (req.nextUrl.searchParams.get("q") ?? "").trim().replace(/\s+/g, " ");
-  if (query.length < 2 || query.length > 80) {
-    return NextResponse.json({ error: "Digite entre 2 e 80 caracteres." }, { status: 400 });
+  const query = cleanText(req.nextUrl.searchParams.get("q"));
+  if (!query) return fail("Digite entre 2 e 80 caracteres.", 400);
+  try {
+    return json(await expandQuery(query), { cacheSeconds: 24 * 3600 });
+  } catch (err) {
+    logError("expand", err);
+    return fail("Não foi possível sugerir buscas agora.", 502);
   }
-  return NextResponse.json(await expandQuery(query));
 }

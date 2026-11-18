@@ -1,15 +1,14 @@
-// Limite simples por IP, em memória. Protege seu saldo do Apify contra abuso.
-const hits = new Map<string, number[]>();
+import { kvIncr } from "./kv";
 
-export function allowRequest(ip: string, max = 10, windowMs = 60_000): boolean {
-  const now = Date.now();
-  const recent = (hits.get(ip) ?? []).filter((t) => now - t < windowMs);
-  if (recent.length >= max) {
-    hits.set(ip, recent);
-    return false;
-  }
-  recent.push(now);
-  hits.set(ip, recent);
-  if (hits.size > 5000) hits.clear();
-  return true;
+// Limite por IP em janela fixa de `windowSec` segundos. Com Redis vale para todas as
+// instâncias; sem Redis vale só dentro de cada instância.
+export async function allowRequest(
+  ip: string,
+  bucket: string,
+  max: number,
+  windowSec = 60,
+): Promise<boolean> {
+  const slot = Math.floor(Date.now() / (windowSec * 1000));
+  const n = await kvIncr(`rl:${bucket}:${ip}:${slot}`, windowSec * 2);
+  return n <= max;
 }

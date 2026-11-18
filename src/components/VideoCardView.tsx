@@ -9,6 +9,7 @@ export function VideoCardView({ video, rank }: { video: VideoCard; rank: number 
   const [comments, setComments] = useState<TopComment[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [imgFailed, setImgFailed] = useState(false);
 
   // Comentários só são buscados (e cobrados) quando a pessoa pede.
   async function loadComments() {
@@ -29,10 +30,17 @@ export function VideoCardView({ video, rank }: { video: VideoCard; rank: number 
   return (
     <article className="card">
       <a href={video.url} target="_blank" rel="noopener noreferrer" className="cover">
-        {video.cover ? (
+        {video.cover && !imgFailed ? (
           // Link do TikTok é assinado e expira; sem referrer para não ser bloqueado.
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={video.cover} alt="" referrerPolicy="no-referrer" loading="lazy" />
+          <img
+            src={video.cover}
+            alt=""
+            referrerPolicy="no-referrer"
+            loading={rank <= 4 ? "eager" : "lazy"}
+            decoding="async"
+            onError={() => setImgFailed(true)}
+          />
         ) : (
           <div className="placeholder">Sem imagem</div>
         )}
