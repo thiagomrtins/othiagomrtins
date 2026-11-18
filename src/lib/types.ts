@@ -17,11 +17,24 @@ export interface VideoCard {
   language: string | null;
 }
 
+export interface TrendTopic {
+  label: string;
+  videos: number;
+  likes: number;
+}
+
+export interface Trending {
+  hashtags: TrendTopic[];
+  terms: TrendTopic[];
+  analyzed: number;
+}
+
 export interface SearchResult {
   query: string;
   language: Language;
   queries: string[];
   videos: VideoCard[];
+  trending: Trending;
   demo: boolean;
   cached: boolean;
   fetchedAt: string;

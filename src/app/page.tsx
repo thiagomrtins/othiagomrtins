@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { TrendingBlock } from "@/components/TrendingBlock";
 import { VideoCardView } from "@/components/VideoCardView";
 import type { ExpandResult, Language, SearchResult } from "@/lib/types";
 
@@ -111,6 +112,8 @@ export default function Home() {
       <section className="grid">
         {result?.videos.map((v, i) => <VideoCardView key={v.id} video={v} rank={i + 1} />)}
       </section>
+
+      {result && result.videos.length > 0 && <TrendingBlock trending={result.trending} />}
     </main>
   );
 }

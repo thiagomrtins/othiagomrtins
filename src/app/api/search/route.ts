@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { searchViralVideos } from "@/lib/apify";
 import { MAX_BRANCHES } from "@/lib/expand";
 import { cacheGet, cacheSet } from "@/lib/cache";
-import { demoVideos } from "@/lib/demo";
+import { demoTrending, demoVideos } from "@/lib/demo";
 import { allowRequest } from "@/lib/rateLimit";
 import type { Language, SearchResult } from "@/lib/types";
 
@@ -47,6 +47,7 @@ export async function GET(req: NextRequest) {
       language,
       queries,
       videos: demoVideos(query, language),
+      trending: demoTrending(),
       demo: true,
       cached: false,
       fetchedAt: new Date().toISOString(),
@@ -60,12 +61,13 @@ export async function GET(req: NextRequest) {
   if (hit) return NextResponse.json({ ...hit, cached: true });
 
   try {
-    const videos = await searchViralVideos(queries, language, token);
+    const { videos, trending } = await searchViralVideos(queries, language, token);
     const result: SearchResult = {
       query,
       language,
       queries,
       videos,
+      trending,
       demo: false,
       cached: false,
       fetchedAt: new Date().toISOString(),

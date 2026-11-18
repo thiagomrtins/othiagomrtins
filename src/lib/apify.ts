@@ -1,4 +1,5 @@
-import type { Language, TopComment, VideoCard } from "./types";
+import { buildTrending, GENERIC_TAGS, toHashtag } from "./trends";
+import type { Language, TopComment, Trending, VideoCard } from "./types";
 
 const ACTOR = "clockworks~tiktok-scraper";
 const API = "https://api.apify.com/v2";
@@ -15,12 +16,6 @@ const SNOWBALL_TAGS = 3;
 const COMMENTS_TO_FETCH = 10;
 // Tempo máximo de uma execução. Passou disso, abortamos para o custo não escapar.
 const MAX_WAIT_MS = 240_000;
-
-// Hashtags genéricas que não dizem nada sobre o assunto.
-const GENERIC_TAGS = new Set([
-  "fyp", "foryou", "foryoupage", "fy", "viral", "viralvideo", "tiktok", "paravoce",
-  "pravoce", "parati", "trending", "trend", "explore", "xyzbca", "brasil", "br", "video",
-]);
 
 interface RawVideo {
   id?: string;
@@ -87,16 +82,6 @@ async function runActor(token: string, input: unknown): Promise<RawVideo[]> {
   );
 }
 
-function toHashtag(raw: string): string {
-  return raw
-    .replace(/^#/, "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9_]/g, "")
-    .slice(0, 40);
-}
-
 const BASE_INPUT = {
   commentsPerPost: 0, // comentários só sob demanda (veja fetchTopComments)
   shouldDownloadVideos: false,
@@ -142,12 +127,25 @@ function toCard(v: RawVideo): VideoCard {
   };
 }
 
+export interface SearchOutput {
+  videos: VideoCard[];
+  trending: Trending;
+}
+
+// Os cards são só os 8 primeiros, mas o ranking usa TODOS os vídeos buscados (mais dados, mesmo custo).
+function finish(all: RawVideo[], subject: string): SearchOutput {
+  return {
+    videos: all.slice(0, VIDEOS_TO_SHOW).map(toCard),
+    trending: buildTrending(all, subject.replace(/^#/, "")),
+  };
+}
+
 // Itens que começam com "#" viram hashtags; os outros viram frases de busca.
 export async function searchViralVideos(
   branches: string[],
   language: Language,
   token: string,
-): Promise<VideoCard[]> {
+): Promise<SearchOutput> {
   if (language !== "pt") {
     const items = await runActor(token, {
       ...BASE_INPUT,
@@ -156,7 +154,8 @@ export async function searchViralVideos(
       videoSearchSorting: "MOST_LIKED",
       resultsPerPage: VIDEOS_TO_SHOW,
     });
-    return pick(items, false).slice(0, VIDEOS_TO_SHOW).map(toCard);
+    const all = pick(items, false);
+    return finish(all, branches[0]);
   }
 
   const tags = [...new Set(branches.filter((b) => b.startsWith("#")).map(toHashtag))].filter(
@@ -187,7 +186,7 @@ export async function searchViralVideos(
       picked = pick(items, true);
     }
   }
-  return picked.slice(0, VIDEOS_TO_SHOW).map(toCard);
+  return finish(picked, branches.find((b) => !b.startsWith("#")) ?? branches[0]);
 }
 
 // Busca os comentários de UM vídeo. Custa cerca de US$ 0,017, por isso só roda quando a pessoa pede.

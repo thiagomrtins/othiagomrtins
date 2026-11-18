@@ -1,4 +1,4 @@
-import type { Language, TopComment, VideoCard } from "./types";
+import type { Language, TopComment, Trending, VideoCard } from "./types";
 
 // Dados fictícios para rodar sem token. Os links apontam para a home do TikTok.
 export function demoVideos(query: string, language: Language): VideoCard[] {
@@ -23,4 +23,13 @@ export function demoComments(): TopComment[] {
     likes: Math.round(12_000 / (j + 1)),
     author: `fa_${j + 1}`,
   }));
+}
+
+export function demoTrending(): Trending {
+  const t = (label: string, videos: number, likes: number) => ({ label, videos, likes });
+  return {
+    hashtags: [t("#exemplo1", 5, 900_000), t("#exemplo2", 4, 400_000), t("#exemplo3", 3, 120_000)],
+    terms: [t("exemplo", 4, 500_000), t("demonstração", 3, 200_000)],
+    analyzed: 8,
+  };
 }
