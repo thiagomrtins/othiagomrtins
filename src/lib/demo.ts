@@ -1,4 +1,4 @@
-import type { Language, VideoCard } from "./types";
+import type { Language, TopComment, VideoCard } from "./types";
 
 // Dados fictícios para rodar sem token. Os links apontam para a home do TikTok.
 export function demoVideos(query: string, language: Language): VideoCard[] {
@@ -14,10 +14,13 @@ export function demoVideos(query: string, language: Language): VideoCard[] {
       : `Example ${i + 1}: viral video about "${query}" #demo`,
     author: `criador_demo_${i + 1}`,
     language: pt ? "pt" : "en",
-    comments: Array.from({ length: 5 }, (_, j) => ({
-      text: pt ? `Comentário de exemplo ${j + 1}` : `Sample comment ${j + 1}`,
-      likes: Math.round(12_000 / (j + 1)),
-      author: `fa_${j + 1}`,
-    })),
+  }));
+}
+
+export function demoComments(): TopComment[] {
+  return Array.from({ length: 5 }, (_, j) => ({
+    text: `Comentário de exemplo ${j + 1}`,
+    likes: Math.round(12_000 / (j + 1)),
+    author: `fa_${j + 1}`,
   }));
 }

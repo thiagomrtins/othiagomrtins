@@ -15,14 +15,20 @@ export interface VideoCard {
   caption: string;
   author: string;
   language: string | null;
-  comments: TopComment[];
 }
 
 export interface SearchResult {
   query: string;
   language: Language;
+  queries: string[];
   videos: VideoCard[];
   demo: boolean;
   cached: boolean;
   fetchedAt: string;
+}
+
+export interface ExpandResult {
+  query: string;
+  queries: string[];
+  source: "ai" | "rules";
 }
