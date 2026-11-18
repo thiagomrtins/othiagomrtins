@@ -22,7 +22,8 @@ async function phrasesFor(subject: string, token: string): Promise<SearchPhrase[
   if (hit) return hit;
   if (!(await takeBudget("search"))) return [];
   try {
-    const phrases = await fetchSearchPhrases(subject, token);
+    // As frases são um extra: se demorarem mais de 25 s, seguimos sem elas.
+    const phrases = await fetchSearchPhrases(subject, token, AbortSignal.timeout(25_000));
     if (phrases.length > 0) await cacheSet(key, phrases, PHRASES_TTL_SEC * 1000);
     return phrases;
   } catch (err) {

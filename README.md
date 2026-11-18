@@ -22,12 +22,24 @@ Sem `APIFY_TOKEN` o app abre em modo demonstração (dados fictícios, custo zer
 3. **Redeploy**: variável nova só vale no próximo deploy.
 4. Ligue **Deployment Protection** enquanto testa.
 
+## Velocidade
+
+- **Uma etapa só:** o botão "Buscar" já faz a busca com as frases sugeridas. Os chips ficam na tela
+  para refinar, e "Refazer busca" liga quando a seleção muda.
+- **Busca de vídeos em paralelo:** uma execução por frase, todas ao mesmo tempo. Quando a primeira
+  termina, as outras têm 10 s para acabar; a que travar é abortada e o que ela já trouxe é aproveitado.
+  O TikTok às vezes bloqueia uma tentativa e o Actor refaz, o que antes podia levar mais de 60 s.
+  Medido: 12 s (antes 15 a 64 s).
+- **Comentários em ~5 s** (antes ~30 s), com reserva automática.
+- **Seção do YouTube** começa a carregar 1200 px antes de aparecer na tela.
+- **Cache:** buscas repetidas vêm da borda da Vercel, sem esperar.
+
 ## Quanto custa
 
 | Ação | Custo aproximado |
 |---|---|
-| Busca em português (vídeos + frases) | US$ 0,16 |
-| Ver comentários de um vídeo | US$ 0,017 |
+| Busca em português (vídeos + frases) | US$ 0,16 (3 execuções de vídeos, de US$ 0,001 cada de início) |
+| Ver comentários de um vídeo | US$ 0,003 (3 a 6 s; reserva mais lenta: US$ 0,0125) |
 | Seção do YouTube (10 vídeos), pelo Apify | US$ 0,04 |
 | Seção do YouTube, pela API do Google | US$ 0 (cota grátis diária) |
 | Resultado já em cache | US$ 0 |

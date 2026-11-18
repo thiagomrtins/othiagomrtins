@@ -1,4 +1,6 @@
 import "server-only";
+import { topComments } from "./comments";
+import { raceWithGrace, sleep } from "./concurrency";
 import { isTikTokVideoUrl, safeHttpsUrl } from "./sanitize";
 import { parseApifyYoutube, YOUTUBE_LIMIT } from "./youtube";
 import { rankSuggestions, suggestionSeeds, type RawSuggestion } from "./searches";
@@ -8,6 +10,9 @@ import type { Language, SearchPhrase, TopComment, Trending, VideoCard, YoutubeVi
 const ACTOR = "clockworks~tiktok-scraper";
 const SUGGEST_ACTOR = "memo23~tiktok-suggestions-scraper";
 const YOUTUBE_ACTOR = "streamers~youtube-scraper";
+// Comentários: o rápido leva ~3 s e custa US$ 0,0003 por comentário; o padrão leva ~28 s e US$ 0,00125.
+const COMMENTS_FAST_ACTOR = "apidojo~tiktok-comments-scraper";
+const COMMENTS_STD_ACTOR = "clockworks~tiktok-comments-scraper";
 const API = "https://api.apify.com/v2";
 
 // Abaixo disto, a busca faz uma segunda rodada automática para tentar completar.
@@ -15,17 +20,15 @@ export const VIDEOS_TO_SHOW = 8;
 // Teto de cards na tela. A tela mostra TODOS os vídeos que a chamada já trouxe (já pagos),
 // em ordem de curtidas, até este limite.
 export const MAX_VIDEOS_SHOWN = 40;
-export const COMMENTS_TO_SHOW = 5;
 // Vídeos pedidos por frase ou hashtag. Com o IP do Brasil, ~90% vêm em português.
 const PER_BRANCH = 8;
 // O TikTok decide o idioma pelo IP de quem busca, não por parâmetro. Este país vai no proxy.
 const PT_PROXY = "BR";
 // Hashtags novas tiradas dos vídeos em português, se a primeira rodada não bastar.
 const SNOWBALL_TAGS = 3;
-// Comentários buscados por vídeo, só quando a pessoa abre. Cada um custa ~US$ 0,00125.
-const COMMENTS_TO_FETCH = 10;
-// Tempo máximo de uma execução. Passou disso, abortamos para o custo não escapar.
-const MAX_WAIT_MS = 240_000;
+// Depois que a PRIMEIRA execução de vídeos termina, as outras têm este tempo para acabar.
+// Medido: um bloqueio do TikTok seguido de nova tentativa leva ~17 s em vez de ~9 s.
+const STRAGGLER_GRACE_MS = 10_000;
 
 interface RawVideo {
   id?: string;
@@ -38,12 +41,6 @@ interface RawVideo {
   authorMeta?: { name?: string };
   hashtags?: { name?: string }[];
   commentsDatasetUrl?: string | null;
-}
-
-interface RawComment {
-  text?: string;
-  diggCount?: number;
-  uniqueId?: string;
 }
 
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -69,11 +66,11 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 interface RunLimits {
   // Teto de custo desta execução, em dólares. O Apify para o Actor ao chegar nele.
   maxCostUsd: number;
+  // Tempo máximo de espera; passou disso, a execução é abortada.
+  maxWaitMs: number;
 }
 
 async function abortRun(id: string, auth: Record<string, string>) {
@@ -90,10 +87,11 @@ async function runActorRaw<T>(
   token: string,
   actor: string,
   input: unknown,
-  { maxCostUsd }: RunLimits,
+  { maxCostUsd, maxWaitMs }: RunLimits,
+  signal?: AbortSignal,
 ): Promise<T[]> {
   const auth = { Authorization: `Bearer ${token}` };
-  const qs = `maxTotalChargeUsd=${maxCostUsd}&timeout=${Math.ceil(MAX_WAIT_MS / 1000)}`;
+  const qs = `maxTotalChargeUsd=${maxCostUsd}&timeout=${Math.ceil(maxWaitMs / 1000)}`;
   const started = await fetchJson<{ data: { id: string; defaultDatasetId: string } }>(
     `${API}/acts/${actor}/runs?${qs}`,
     {
@@ -105,17 +103,18 @@ async function runActorRaw<T>(
   const { id, defaultDatasetId } = started.data;
 
   try {
-    const deadline = Date.now() + MAX_WAIT_MS;
+    const deadline = Date.now() + maxWaitMs;
     let status = "RUNNING";
-    let wait = 1500;
+    let wait = 1000;
     while (Date.now() < deadline) {
+      if (signal?.aborted) throw new Error("Cancelado");
       const run = await fetchJson<{ data: { status: string } }>(`${API}/actor-runs/${id}`, {
         headers: auth,
       });
       status = run.data.status;
       if (status !== "READY" && status !== "RUNNING") break;
-      await sleep(wait);
-      wait = Math.min(wait + 500, 4000); // começa rápido e vai espaçando
+      await sleep(wait, signal);
+      wait = Math.min(wait + 500, 3000); // começa rápido e vai espaçando
     }
     if (status === "READY" || status === "RUNNING") throw new Error("Tempo esgotado");
     if (status !== "SUCCEEDED") throw new Error(`Execução terminou como ${status}`);
@@ -126,6 +125,19 @@ async function runActorRaw<T>(
     );
   } catch (err) {
     await abortRun(id, auth);
+    // Cancelada ou sem tempo: o que a execução já tinha produzido foi cobrado, então aproveitamos.
+    const cut = err instanceof Error && (err.message === "Cancelado" || err.message === "Tempo esgotado");
+    if (cut) {
+      try {
+        const partial = await fetchJson<T[]>(
+          `${API}/datasets/${defaultDatasetId}/items?format=json&clean=true&limit=200`,
+          { headers: auth },
+        );
+        if (partial.length > 0) return partial;
+      } catch {
+        // sem resultado parcial
+      }
+    }
     throw err;
   }
 }
@@ -133,18 +145,29 @@ async function runActorRaw<T>(
 // Teto de custo por execução. O Apify exige no mínimo US$ 0,50 (testado: valores menores são
 // recusados com HTTP 400). Uma execução normal gasta de US$ 0,01 a 0,12, então o teto só
 // pega execuções fora do normal.
-const RUN_LIMITS: RunLimits = { maxCostUsd: 0.5 };
-const VIDEO_RUN_LIMITS = RUN_LIMITS;
-const PHRASES_RUN_LIMITS = RUN_LIMITS;
-const COMMENTS_RUN_LIMITS = RUN_LIMITS;
+const MAX_COST_USD = 0.5;
+// Tempos máximos de espera (medidos: vídeos 15 a 64 s, frases 8 a 12 s, comentários ~30 s).
+const VIDEO_RUN_LIMITS: RunLimits = { maxCostUsd: MAX_COST_USD, maxWaitMs: 100_000 };
+const PHRASES_RUN_LIMITS: RunLimits = { maxCostUsd: MAX_COST_USD, maxWaitMs: 40_000 };
+const COMMENTS_FAST_LIMITS: RunLimits = { maxCostUsd: MAX_COST_USD, maxWaitMs: 30_000 };
+const COMMENTS_STD_LIMITS: RunLimits = { maxCostUsd: MAX_COST_USD, maxWaitMs: 90_000 };
+const YOUTUBE_RUN_LIMITS: RunLimits = { maxCostUsd: MAX_COST_USD, maxWaitMs: 90_000 };
 
-const runActor = (token: string, input: unknown, limits: RunLimits = VIDEO_RUN_LIMITS) =>
-  runActorRaw<RawVideo>(token, ACTOR, input, limits);
+const runActor = (
+  token: string,
+  input: unknown,
+  limits: RunLimits = VIDEO_RUN_LIMITS,
+  signal?: AbortSignal,
+) => runActorRaw<RawVideo>(token, ACTOR, input, limits, signal);
 
 // Frases que o TikTok sugere quando alguém digita na busca (autocomplete), no Brasil.
 // O TikTok decide pelo IP, então usamos o grupo de proxy RESIDENCIAL com país BR
 // (o grupo padrão da conta gratuita só tem IPs dos EUA e dá erro).
-export async function fetchSearchPhrases(subject: string, token: string): Promise<SearchPhrase[]> {
+export async function fetchSearchPhrases(
+  subject: string,
+  token: string,
+  signal?: AbortSignal,
+): Promise<SearchPhrase[]> {
   const seeds = suggestionSeeds(subject);
   const rows = await runActorRaw<RawSuggestion>(token, SUGGEST_ACTOR, {
     keywords: seeds,
@@ -153,7 +176,7 @@ export async function fetchSearchPhrases(subject: string, token: string): Promis
     maxSuggestionsPerKeyword: 6,
     includeMetadata: true,
     proxy: { useApifyProxy: true, apifyProxyGroups: ["RESIDENTIAL"], apifyProxyCountry: "BR" },
-  }, PHRASES_RUN_LIMITS);
+  }, PHRASES_RUN_LIMITS, signal);
   return rankSuggestions(rows, subject, seeds);
 }
 
@@ -239,26 +262,25 @@ export async function searchViralVideos(
   const phrases = branches.filter((b) => !b.startsWith("#"));
 
   const ptInput = { ...BASE_INPUT, proxyCountryCode: PT_PROXY, resultsPerPage: PER_BRANCH };
-  const jobs: Promise<RawVideo[]>[] = [];
-  if (phrases.length > 0) {
-    // Sem videoSearchSorting: a ordenação "mais curtidos" do TikTok foge da localização
-    // (testado: 0 de 12 em português). Ordenamos por curtidas depois, aqui dentro.
-    jobs.push(runActor(token, { ...ptInput, searchQueries: phrases, searchSection: "/video" }));
-  }
+
+  // Uma execução por frase, todas ao mesmo tempo (uma execução com várias frases processa uma
+  // depois da outra e fica lenta). Quando a primeira termina, as outras têm poucos segundos para
+  // acabar; a que travar é abortada e usamos o que já chegou. Custo extra: US$ 0,001 por execução.
+  // Sem videoSearchSorting: a ordenação "mais curtidos" do TikTok foge da localização
+  // (testado: 0 de 12 em português). Ordenamos por curtidas depois, aqui dentro.
+  const jobs: ((signal: AbortSignal) => Promise<RawVideo[]>)[] = phrases.map(
+    (phrase) => (signal) =>
+      runActor(token, { ...ptInput, searchQueries: [phrase], searchSection: "/video" }, VIDEO_RUN_LIMITS, signal),
+  );
   if (tags.length > 0) {
-    jobs.push(runActor(token, { ...ptInput, hashtags: tags }));
+    jobs.push((signal) => runActor(token, { ...ptInput, hashtags: tags }, VIDEO_RUN_LIMITS, signal));
   }
 
-  // allSettled: se uma das buscas falhar, aproveitamos a outra em vez de jogar tudo fora.
-  const settled = await Promise.allSettled(jobs);
-  const ok = settled.filter((r): r is PromiseFulfilledResult<RawVideo[]> => r.status === "fulfilled");
-  for (const r of settled) {
-    if (r.status === "rejected") {
-      console.error("[apify]", r.reason instanceof Error ? r.reason.message : "erro desconhecido");
-    }
-  }
-  if (ok.length === 0) throw new Error("Todas as buscas falharam");
-  let items = ok.flatMap((r) => r.value);
+  const results = await raceWithGrace(jobs, STRAGGLER_GRACE_MS, (err) =>
+    console.error("[apify]", err instanceof Error ? err.message : "erro desconhecido"),
+  );
+  if (results.length === 0) throw new Error("Todas as buscas falharam");
+  let items = results.flat();
   let picked = pick(items, true);
 
   // Poucos vídeos em português: aprendemos hashtags com os que já achamos e buscamos de novo.
@@ -273,37 +295,29 @@ export async function searchViralVideos(
   return finish(picked, branches.find((b) => !b.startsWith("#")) ?? branches[0]);
 }
 
-// Busca os comentários de UM vídeo. Custa cerca de US$ 0,017, por isso só roda quando a pessoa pede.
+// Busca os comentários de UM vídeo e devolve os 5 mais curtidos. Só roda quando a pessoa pede.
+// Tenta primeiro o Actor rápido (~3 s, ~US$ 0,003); se falhar ou vier vazio, usa o padrão (~28 s).
+// Pedimos 30 para ter mais chance de pegar os mais curtidos de verdade (o Actor pode devolver menos).
 export async function fetchTopComments(videoUrl: string, token: string): Promise<TopComment[]> {
-  const items = await runActor(token, {
-    postURLs: [videoUrl],
-    resultsPerPage: 1,
-    commentsPerPost: COMMENTS_TO_FETCH,
-    shouldDownloadVideos: false,
-    shouldDownloadCovers: false,
-  }, COMMENTS_RUN_LIMITS);
-  const datasetUrl = items[0]?.commentsDatasetUrl;
-  if (!datasetUrl) return [];
-
-  let url: URL;
   try {
-    url = new URL(datasetUrl);
-  } catch {
-    return [];
+    const rows = await runActorRaw<unknown>(
+      token,
+      COMMENTS_FAST_ACTOR,
+      { postURLs: [videoUrl], maxCommentsPerPost: 30, includeReplies: false },
+      COMMENTS_FAST_LIMITS,
+    );
+    const fast = topComments(rows, "fast");
+    if (fast.length > 0) return fast;
+  } catch (err) {
+    console.error("[apify] comentários (rápido):", err instanceof Error ? err.message : "erro");
   }
-  // Só aceitamos o próprio Apify, em https e na rota de datasets, para o token nunca ir parar em outro lugar.
-  if (url.protocol !== "https:" || url.hostname !== "api.apify.com") return [];
-  if (!url.pathname.startsWith("/v2/datasets/")) return [];
-  url.searchParams.set("format", "json");
-  url.searchParams.set("clean", "true");
-  const raw = await fetchJson<RawComment[]>(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return raw
-    .filter((c) => typeof c.text === "string" && c.text.length > 0)
-    .sort((a, b) => (b.diggCount ?? 0) - (a.diggCount ?? 0))
-    .slice(0, COMMENTS_TO_SHOW)
-    .map((c) => ({ text: c.text as string, likes: c.diggCount ?? 0, author: c.uniqueId ?? "" }));
+  const rows = await runActorRaw<unknown>(
+    token,
+    COMMENTS_STD_ACTOR,
+    { postURLs: [videoUrl], commentsPerPost: 10, maxRepliesPerComment: 0 },
+    COMMENTS_STD_LIMITS,
+  );
+  return topComments(rows, "standard");
 }
 
 // Reserva quando não há YOUTUBE_API_KEY (ou a cota do Google acabou). Custa ~US$ 0,004 por vídeo
@@ -323,7 +337,7 @@ export async function fetchYoutubeViaApify(query: string, token: string): Promis
         sortingOrder: "views",
         transcriptionAndSubtitle: "NONE",
       },
-      RUN_LIMITS,
+      YOUTUBE_RUN_LIMITS,
     );
     const videos = parseApifyYoutube(items);
     if (videos.length > 0) return videos;

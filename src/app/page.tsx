@@ -16,6 +16,8 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [branches, setBranches] = useState<ExpandResult | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  // Frases usadas na última busca: o botão "Refazer" só liga se a seleção mudou.
+  const [searchedWith, setSearchedWith] = useState<string[]>([]);
   const [result, setResult] = useState<SearchResult | null>(null);
   // Cada busca ganha um número; respostas de buscas antigas são ignoradas.
   const requestId = useRef(0);
@@ -34,7 +36,10 @@ export default function Home() {
     try {
       const v = variants.length > 0 ? `&v=${encodeURIComponent(variants.join("|"))}` : "";
       const data = await getJson<SearchResult>(`/api/search?q=${encodeURIComponent(q)}&lang=${lang}${v}`);
-      if (id === requestId.current) setResult(data);
+      if (id === requestId.current) {
+        setResult(data);
+        setSearchedWith(variants);
+      }
     } catch (err) {
       if (id !== requestId.current) return;
       setResult(null);
@@ -44,7 +49,7 @@ export default function Home() {
     }
   }
 
-  // Em português, primeiro mostramos as ramificações para a pessoa escolher.
+  // Uma etapa só: busca já com as frases sugeridas. Os chips ficam na tela para refinar depois.
   async function start(q: string) {
     setResult(null);
     setBranches(null);
@@ -52,16 +57,18 @@ export default function Home() {
     const id = ++requestId.current;
     setLoading(true);
     setError(null);
+    let variants = [q];
     try {
       const data = await getJson<ExpandResult>(`/api/expand?q=${encodeURIComponent(q)}`);
       if (id !== requestId.current) return;
       setBranches(data);
       setSelected(data.queries);
-    } catch (err) {
-      if (id === requestId.current) setError(err instanceof Error ? err.message : "Erro na busca");
-    } finally {
-      if (id === requestId.current) setLoading(false);
+      variants = data.queries;
+    } catch {
+      // Sem sugestões, buscamos só pelo que a pessoa digitou: a busca não depende delas.
     }
+    if (id !== requestId.current) return;
+    await runSearch(q, "pt", variants);
   }
 
   function onSubmit(e: FormEvent) {
@@ -97,14 +104,20 @@ export default function Home() {
           <option value="pt">🇧🇷 Conteúdo em português</option>
           <option value="global">🌎 Global</option>
         </select>
-        <button disabled={loading}>{loading ? "Aguarde…" : language === "pt" ? "Sugerir buscas" : "Buscar"}</button>
+        <button disabled={loading}>{loading ? "Buscando…" : "Buscar"}</button>
       </form>
+
+      {loading && !result && (
+        <p className="hint" role="status">
+          Isso costuma levar de 10 a 30 segundos. Buscas repetidas são instantâneas.
+        </p>
+      )}
 
       {branches && (
         <section className="branches">
           <p>
-            Buscas em português sobre <strong>{branches.query}</strong>
-            {branches.source === "rules" && " (sugestões simples)"}. Desmarque as que não quiser:
+            Frases usadas na busca sobre <strong>{branches.query}</strong>
+            {branches.source === "rules" && " (sugestões simples)"}. Desmarque as que não quiser e refaça a busca:
           </p>
           <div className="chips">
             {branches.queries.map((q) => (
@@ -115,10 +128,14 @@ export default function Home() {
             ))}
           </div>
           <button
-            disabled={loading || selected.length === 0}
+            disabled={
+              loading ||
+              selected.length === 0 ||
+              (selected.length === searchedWith.length && selected.every((q) => searchedWith.includes(q)))
+            }
             onClick={() => runSearch(branches.query, "pt", selected)}
           >
-            {loading ? "Buscando…" : `Buscar vídeos (${selected.length})`}
+            {loading ? "Buscando…" : `Refazer busca (${selected.length})`}
           </button>
         </section>
       )}
@@ -127,6 +144,14 @@ export default function Home() {
       {result?.demo && (
         <p className="notice">Modo demonstração: sem token do Apify, os dados abaixo são fictícios.</p>
       )}
+      {loading && !result && (
+        <section className="grid" aria-busy="true" aria-label="Carregando resultados">
+          {Array.from({ length: 8 }, (_, i) => (
+            <div key={i} className="card skeleton" />
+          ))}
+        </section>
+      )}
+
       {result && result.videos.length === 0 && (
         <p>Nenhum vídeo em português encontrado. Tente outras ramificações.</p>
       )}

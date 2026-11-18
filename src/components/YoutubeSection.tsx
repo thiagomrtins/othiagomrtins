@@ -31,7 +31,8 @@ export function YoutubeSection({ query, language }: { query: string; language: L
   const [loading, setLoading] = useState(false);
   const started = useRef(false);
 
-  // Só busca quando a seção chega perto da tela: quem não rola até o fim não gera custo.
+  // Só busca quando a seção chega perto da tela (1200 px antes, para já estar pronta quando a pessoa
+  // chegar): quem não rola até o fim não gera custo.
   useEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -63,7 +64,7 @@ export function YoutubeSection({ query, language }: { query: string; language: L
           void load();
         }
       },
-      { rootMargin: "400px" },
+      { rootMargin: "1200px" },
     );
     obs.observe(el);
     return () => obs.disconnect();
