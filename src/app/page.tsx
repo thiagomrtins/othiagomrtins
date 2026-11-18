@@ -59,7 +59,7 @@ export default function Home() {
 
   return (
     <main>
-      <h1>Viral Finder</h1>
+      <h1>Busca <span>Viral</span></h1>
       <p className="sub">Descubra os vídeos mais curtidos do TikTok em qualquer assunto.</p>
 
       <form onSubmit={onSubmit} className="form">

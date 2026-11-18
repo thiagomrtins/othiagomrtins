@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Viral Finder",
+  title: "Busca Viral",
   description: "Encontre os vídeos mais virais do TikTok no seu nicho.",
 };
 
