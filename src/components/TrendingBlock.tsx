@@ -16,7 +16,7 @@ export function TrendingBlock({
 
   return (
     <section className="trending">
-      <h2>Em alta no TikTok</h2>
+      <h2 className="view-title">Hashtags e buscas em alta</h2>
 
       {searches.length > 0 && (
         <div className="sub-block">

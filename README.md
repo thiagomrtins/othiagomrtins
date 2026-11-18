@@ -22,6 +22,14 @@ Sem `APIFY_TOKEN` o app abre em modo demonstração (dados fictícios, custo zer
 3. **Redeploy**: variável nova só vale no próximo deploy.
 4. Ligue **Deployment Protection** enquanto testa.
 
+## Telas
+
+- **Pesquisa:** título, barra de busca e seletor de idioma.
+- **Resultados:** menu lateral à esquerda (no celular, em barra no topo) com **Em alta no TikTok**
+  (vídeos por curtidas), **Hashtags e buscas em alta** e **YouTube**, mais **← Voltar à pesquisa**.
+  Cada opção mostra só o seu painel. Os painéis continuam montados por baixo: a busca do YouTube em
+  segundo plano segue rodando e os comentários abertos não se perdem ao trocar de menu.
+
 ## Velocidade
 
 - **Uma etapa só:** o botão "Buscar" já faz a busca com as frases sugeridas. Os chips ficam na tela
