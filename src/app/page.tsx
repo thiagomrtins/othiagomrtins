@@ -130,6 +130,13 @@ export default function Home() {
         <p>Nenhum vídeo em português encontrado. Tente outras ramificações.</p>
       )}
 
+      {result && result.videos.length > 0 && (
+        <p className="count">
+          {result.videos.length} {result.videos.length === 1 ? "vídeo encontrado" : "vídeos encontrados"}
+          {result.language === "pt" ? " em português" : ""}, do mais curtido para o menos curtido.
+        </p>
+      )}
+
       <section className="grid">
         {result?.videos.map((v, i) => <VideoCardView key={v.id} video={v} rank={i + 1} />)}
       </section>

@@ -8,7 +8,11 @@ const ACTOR = "clockworks~tiktok-scraper";
 const SUGGEST_ACTOR = "memo23~tiktok-suggestions-scraper";
 const API = "https://api.apify.com/v2";
 
+// Abaixo disto, a busca faz uma segunda rodada automática para tentar completar.
 export const VIDEOS_TO_SHOW = 8;
+// Teto de cards na tela. A tela mostra TODOS os vídeos que a chamada já trouxe (já pagos),
+// em ordem de curtidas, até este limite.
+export const MAX_VIDEOS_SHOWN = 40;
 export const COMMENTS_TO_SHOW = 5;
 // Vídeos pedidos por frase ou hashtag. Com o IP do Brasil, ~90% vêm em português.
 const PER_BRANCH = 8;
@@ -201,10 +205,10 @@ export interface SearchOutput {
   trending: Trending;
 }
 
-// Os cards são só os 8 primeiros, mas o ranking usa TODOS os vídeos buscados (mais dados, mesmo custo).
+// Os cards mostram todos os vídeos encontrados (até MAX_VIDEOS_SHOWN), e o ranking usa os mesmos.
 function finish(all: RawVideo[], subject: string): SearchOutput {
   return {
-    videos: all.slice(0, VIDEOS_TO_SHOW).map(toCard),
+    videos: all.slice(0, MAX_VIDEOS_SHOWN).map(toCard),
     trending: buildTrending(all, subject.replace(/^#/, "")),
   };
 }

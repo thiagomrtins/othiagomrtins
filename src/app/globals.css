@@ -52,3 +52,4 @@ li small { color:var(--muted); margin-left:6px; }
 .rank-list li.phrase .pos { grid-row:auto; }
 .phrase-btn { background:none; border:0; padding:0; color:var(--fg); font:inherit; font-weight:600; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
 .phrase-btn:hover { color:var(--accent); text-decoration:underline; }
+.count { margin:0 0 12px; color:var(--muted); font-size:.9rem; }

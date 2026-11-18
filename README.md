@@ -1,7 +1,7 @@
 # Busca Viral
 
 Encontre os vídeos mais virais do TikTok no seu nicho: busca por assunto, filtro de português ou
-global, 8 cards por curtidas, top 5 comentários sob demanda e um bloco "Em alta no TikTok" com
+global, todos os vídeos encontrados na busca (cerca de 22 em português) por curtidas, top 5 comentários sob demanda e um bloco "Em alta no TikTok" com
 buscas, hashtags e temas.
 
 ## Rodar no seu computador
