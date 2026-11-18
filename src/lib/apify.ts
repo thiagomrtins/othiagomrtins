@@ -5,11 +5,20 @@ const API = "https://api.apify.com/v2";
 
 export const VIDEOS_TO_SHOW = 8;
 export const COMMENTS_TO_SHOW = 5;
-// Vídeos pedidos por ramificação em português. Só cerca de metade vem em português,
-// então 5 ramificações x 6 vídeos costumam render bem mais que os 8 necessários.
-const PER_BRANCH_PT = 6;
+// Vídeos pedidos por hashtag ou frase. Só parte vem em português, então pedimos a mais.
+const PER_BRANCH = 8;
+// Hashtags novas tiradas dos vídeos em português, se a primeira rodada não bastar.
+const SNOWBALL_TAGS = 3;
 // Comentários buscados por vídeo, só quando a pessoa abre. Cada um custa ~US$ 0,00125.
 const COMMENTS_TO_FETCH = 10;
+// Tempo máximo de uma execução. Passou disso, abortamos para o custo não escapar.
+const MAX_WAIT_MS = 240_000;
+
+// Hashtags genéricas que não dizem nada sobre o assunto.
+const GENERIC_TAGS = new Set([
+  "fyp", "foryou", "foryoupage", "fy", "viral", "viralvideo", "tiktok", "paravoce",
+  "pravoce", "parati", "trending", "trend", "explore", "xyzbca", "brasil", "br", "video",
+]);
 
 interface RawVideo {
   id?: string;
@@ -20,6 +29,7 @@ interface RawVideo {
   webVideoUrl?: string;
   videoMeta?: { coverUrl?: string; originalCoverUrl?: string };
   authorMeta?: { name?: string };
+  hashtags?: { name?: string }[];
   commentsDatasetUrl?: string | null;
 }
 
@@ -38,54 +48,149 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-function runActor(token: string, input: unknown): Promise<RawVideo[]> {
-  // O token vai no cabeçalho, não na URL.
-  return fetchJson<RawVideo[]>(
-    `${API}/acts/${ACTOR}/run-sync-get-dataset-items?format=json&clean=true`,
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Inicia a execução, espera até MAX_WAIT_MS e, se estourar, aborta (para parar de cobrar).
+async function runActor(token: string, input: unknown): Promise<RawVideo[]> {
+  const auth = { Authorization: `Bearer ${token}` };
+  const started = await fetchJson<{ data: { id: string; defaultDatasetId: string } }>(
+    `${API}/acts/${ACTOR}/runs`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json", ...auth },
       body: JSON.stringify(input),
     },
   );
+  const { id, defaultDatasetId } = started.data;
+
+  const deadline = Date.now() + MAX_WAIT_MS;
+  let status = "RUNNING";
+  while (Date.now() < deadline) {
+    const run = await fetchJson<{ data: { status: string } }>(`${API}/actor-runs/${id}`, {
+      headers: auth,
+    });
+    status = run.data.status;
+    if (status !== "READY" && status !== "RUNNING") break;
+    await sleep(4000);
+  }
+  if (status === "READY" || status === "RUNNING") {
+    await fetch(`${API}/actor-runs/${id}/abort`, { method: "POST", headers: auth }).catch(() => {});
+    throw new Error("Tempo esgotado");
+  }
+  if (status !== "SUCCEEDED") throw new Error(`Execução terminou como ${status}`);
+
+  return fetchJson<RawVideo[]>(
+    `${API}/datasets/${defaultDatasetId}/items?format=json&clean=true&limit=200`,
+    { headers: auth },
+  );
 }
 
-export async function searchViralVideos(
-  queries: string[],
-  language: Language,
-  token: string,
-): Promise<VideoCard[]> {
-  const pt = language === "pt";
-  const items = await runActor(token, {
-    searchQueries: queries,
-    searchSection: "/video",
-    videoSearchSorting: "MOST_LIKED",
-    resultsPerPage: pt ? PER_BRANCH_PT : VIDEOS_TO_SHOW,
-    commentsPerPost: 0, // comentários só sob demanda (veja fetchTopComments)
-    shouldDownloadVideos: false,
-    shouldDownloadCovers: false,
-  });
+function toHashtag(raw: string): string {
+  return raw
+    .replace(/^#/, "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, "")
+    .slice(0, 40);
+}
 
+const BASE_INPUT = {
+  commentsPerPost: 0, // comentários só sob demanda (veja fetchTopComments)
+  shouldDownloadVideos: false,
+  shouldDownloadCovers: false,
+};
+
+// Remove repetidos, mantém só português quando pedido, e ordena por curtidas.
+function pick(items: RawVideo[], onlyPt: boolean): RawVideo[] {
   const unique = new Map<string, RawVideo>();
   for (const v of items) {
     if (!v.id || !v.webVideoUrl || unique.has(v.id)) continue;
-    if (pt && v.textLanguage !== "pt") continue;
+    if (onlyPt && v.textLanguage !== "pt") continue;
     unique.set(v.id, v);
   }
+  return [...unique.values()].sort((a, b) => (b.diggCount ?? 0) - (a.diggCount ?? 0));
+}
 
-  return [...unique.values()]
-    .sort((a, b) => (b.diggCount ?? 0) - (a.diggCount ?? 0))
-    .slice(0, VIDEOS_TO_SHOW)
-    .map((v) => ({
-      id: v.id as string,
-      url: v.webVideoUrl as string,
-      cover: v.videoMeta?.coverUrl ?? v.videoMeta?.originalCoverUrl ?? null,
-      likes: v.diggCount ?? 0,
-      views: v.playCount ?? 0,
-      caption: v.text ?? "",
-      author: v.authorMeta?.name ?? "",
-      language: v.textLanguage ?? null,
-    }));
+function topNewHashtags(videos: RawVideo[], used: Set<string>): string[] {
+  const count = new Map<string, number>();
+  for (const v of videos) {
+    for (const h of v.hashtags ?? []) {
+      const t = toHashtag(h.name ?? "");
+      if (t.length < 3 || GENERIC_TAGS.has(t) || used.has(t)) continue;
+      count.set(t, (count.get(t) ?? 0) + 1);
+    }
+  }
+  return [...count.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, SNOWBALL_TAGS)
+    .map(([t]) => t);
+}
+
+function toCard(v: RawVideo): VideoCard {
+  return {
+    id: v.id as string,
+    url: v.webVideoUrl as string,
+    cover: v.videoMeta?.coverUrl ?? v.videoMeta?.originalCoverUrl ?? null,
+    likes: v.diggCount ?? 0,
+    views: v.playCount ?? 0,
+    caption: v.text ?? "",
+    author: v.authorMeta?.name ?? "",
+    language: v.textLanguage ?? null,
+  };
+}
+
+// Itens que começam com "#" viram hashtags; os outros viram frases de busca.
+export async function searchViralVideos(
+  branches: string[],
+  language: Language,
+  token: string,
+): Promise<VideoCard[]> {
+  if (language !== "pt") {
+    const items = await runActor(token, {
+      ...BASE_INPUT,
+      searchQueries: [branches[0]],
+      searchSection: "/video",
+      videoSearchSorting: "MOST_LIKED",
+      resultsPerPage: VIDEOS_TO_SHOW,
+    });
+    return pick(items, false).slice(0, VIDEOS_TO_SHOW).map(toCard);
+  }
+
+  const tags = [...new Set(branches.filter((b) => b.startsWith("#")).map(toHashtag))].filter(
+    (t) => t.length >= 2,
+  );
+  const phrases = branches.filter((b) => !b.startsWith("#"));
+
+  const jobs: Promise<RawVideo[]>[] = [];
+  if (tags.length > 0) {
+    jobs.push(runActor(token, { ...BASE_INPUT, hashtags: tags, resultsPerPage: PER_BRANCH }));
+  }
+  if (phrases.length > 0) {
+    jobs.push(
+      runActor(token, {
+        ...BASE_INPUT,
+        searchQueries: phrases,
+        searchSection: "/video",
+        videoSearchSorting: "MOST_LIKED",
+        resultsPerPage: PER_BRANCH,
+      }),
+    );
+  }
+
+  let items = (await Promise.all(jobs)).flat();
+  let picked = pick(items, true);
+
+  // Poucos vídeos em português: aprendemos hashtags com os que já achamos e buscamos de novo.
+  if (picked.length < VIDEOS_TO_SHOW) {
+    const next = topNewHashtags(picked, new Set(tags));
+    if (next.length > 0) {
+      const more = await runActor(token, { ...BASE_INPUT, hashtags: next, resultsPerPage: PER_BRANCH });
+      items = [...items, ...more];
+      picked = pick(items, true);
+    }
+  }
+  return picked.slice(0, VIDEOS_TO_SHOW).map(toCard);
 }
 
 // Busca os comentários de UM vídeo. Custa cerca de US$ 0,017, por isso só roda quando a pessoa pede.
