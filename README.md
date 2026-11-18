@@ -31,7 +31,7 @@ Sem `APIFY_TOKEN` o app abre em modo demonstração (dados fictícios, custo zer
   O TikTok às vezes bloqueia uma tentativa e o Actor refaz, o que antes podia levar mais de 60 s.
   Medido: 12 s (antes 15 a 64 s).
 - **Comentários em ~5 s** (antes ~30 s), com reserva automática.
-- **Seção do YouTube** começa a carregar 1200 px antes de aparecer na tela.
+- **Seção do YouTube** carrega em segundo plano e abre na hora do clique.
 - **Cache:** buscas repetidas vêm da borda da Vercel, sem esperar.
 
 ## Quanto custa
@@ -51,7 +51,10 @@ O plano gratuito do Apify tem US$ 5 por mês. Por isso o cache e os tetos abaixo
 No fim da página aparecem os 10 vídeos mais vistos do YouTube sobre o assunto buscado, em cards com
 capa e título. O clique abre o vídeo no YouTube.
 
-- A busca só dispara quando a seção chega perto da tela, então quem não rola até o fim não gera custo.
+- A seção mostra um botão **"Buscar os vídeos mais vistos sobre o tema"**. Os vídeos são buscados em
+  segundo plano assim que os resultados do TikTok aparecem, e os cards só abrem quando a pessoa clica
+  (já prontos). Isso gasta uma busca de YouTube (~US$ 0,01) por pesquisa, mesmo sem clique. Para só
+  buscar no clique, troque `PREFETCH_IN_BACKGROUND` para `false` em `src/components/YoutubeSection.tsx`.
 - Com `YOUTUBE_API_KEY`, usa a API oficial do Google (~1 s, cota grátis).
 - Sem a chave, usa o Actor `grow_media/youtube-search-api` do Apify (~5 s, ~US$ 0,01), e como último
   recurso o `streamers/youtube-scraper` (18 a 50 s, ~US$ 0,04).

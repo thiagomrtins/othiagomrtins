@@ -90,3 +90,10 @@ li small { color:var(--muted); margin-left:6px; }
   animation:shimmer 1.4s infinite; }
 @keyframes shimmer { to { background-position:-200% 0; } }
 @media (prefers-reduced-motion: reduce) { .card.skeleton { animation:none; } }
+
+/* Botão da seção do YouTube */
+.yt-action { display:grid; gap:8px; justify-items:start; }
+.yt-button { background:var(--yt-red-dark); color:#fff; border:0; border-radius:10px; padding:12px 18px; font:inherit; font-weight:700; cursor:pointer; }
+.yt-button:hover { background:#a30000; }
+.yt-button:focus-visible { outline:3px solid #ff000055; outline-offset:2px; }
+.yt-retry { background:none; border:1px solid var(--yt-red-dark); color:var(--yt-red-dark); border-radius:8px; padding:3px 10px; font:inherit; font-size:.85rem; cursor:pointer; }
